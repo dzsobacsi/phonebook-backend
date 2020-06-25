@@ -1,7 +1,9 @@
+require('dotenv').config()
 const express = require('express')
-const morgan = require('morgan')
+const morgan = require('morgan')    // logs requests to the console
 const cors = require('cors')
 const app = express()
+const Person = require('./models/person.js')  // it has mongoose inside
 const PORT = process.env.PORT || 3001
 
 morgan.token('body', (req, res) => {
@@ -14,85 +16,107 @@ app.use(cors())
 app.use(express.static('build'))
 app.use(express.json())
 app.use(morgan(':method :url :status :res[content-length] - :response-time ms :body'))
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`)
-})
-
-let persons = [
-  {
-    id: 1,
-    name: "Peppa Pig",
-    number: "123-456-789",
-  },
-  {
-    id: 2,
-    name: "Susy Sheep",
-    number: "123-456-123",
-  },
-  {
-    id: 3,
-    name: "Danny Dog",
-    number: "654-789-852",
-  }
-]
 
 // =========== GET requests ===================
 
 app.get('/', (req, res) => {
-  res.send('<h1>Hello World!</h1>')
+  res.send('<h1>Hello World!</h1>') // the express.static above overrites this and sends the build frontend instead
 })
 
 app.get('/info', (req, res) => {
-  //console.log(req)
-  const text1 = `<p>The phonebook has info for ${persons.length} people</p>`
-  const now = new Date()
-  const text2 = now.toString()
-  res.send(text1.concat(text2))
+  Person.find({}).then(person => {
+    //console.log(person)
+    const text1 = `<p>The phonebook contains the numbers of ${person.length} people</p>`
+    const now = new Date()
+    const text2 = now.toString()
+    res.send(text1.concat(text2))
+  })
 })
 
 app.get('/api/persons', (req, res) => {
-  res.json(persons)
+  Person.find({}).then(person => {
+    // res.json() is quite similar to res.send() but it converts the result
+    // to json before sending
+    // https://expressjs.com/en/api.html#res.json
+    //person.sort((a, b) => a.name < b.name ? -1 : 1) // sorting may have a better place in the frontend
+    res.json(person)
+  })
 })
 
-app.get('/api/persons/:id', (req, res) => {
-  const id = Number(req.params.id)
-  const person = persons.find(p => p.id === id)
-  if (person) {
-    res.json(person)
-  } else {
-    res.status(404).end()
-  }
+app.get('/api/persons/:id', (req, res, next) => {
+  Person.findById(req.params.id)
+    .then(person => {
+      if (person) {
+        res.json(person)
+      }
+      else {
+        res.status(404).end()
+      }
+    })
+    .catch(error => next(error))
 })
 
 // =========== POST request ===================
 
-app.post('/api/persons', (req, res) => {
-  const person = req.body
-  //console.log('Post request', person)
+app.post('/api/persons', (req, res, next) => {
+  const person = new Person({   // Person is a mongoose model exported by person.js
+    name: req.body.name,
+    number: req.body.number,
+  })
 
-  if (!person.name || !person.number) {
-    console.log('Error: Name or number is empty')
-    return res.status(400).json({
-      error: 'content missing'
-    })
+  person.save()
+    .then(savedPerson => res.json(savedPerson))
+    .catch(error => next(error))
+})
+
+// ============== PUT request =================
+
+app.put('/api/persons/:id', (req, res, next) => {
+  const person = {
+    name: req.body.name,
+    number: req.body.number,
   }
 
-  if (persons.find(p => p.name === person.name)) {
-    console.log('Error: Name must be unique')
-    return res.status(400).json({
-      error: 'name must be unique'
-    })
+  const options = {
+    new: true,
+    runValidators: true,
+    context: 'query'
   }
 
-  person.id = Math.floor(Math.random() * 1000000)
-  res.json(person)
-  persons = persons.concat(person)
+  Person.findByIdAndUpdate(req.params.id, person, options)
+    .then(updatedPerson => res.json(updatedPerson))
+    .catch(error => next(error))
 })
 
 // =========== DELETE request ===================
 
-app.delete('/api/persons/:id', (req, res) => {
-  const id = Number(req.params.id)
-  persons = persons.filter(p => p.id !== id)
-  res.status(204).end()
+app.delete('/api/persons/:id', (req, res, next) => {
+  Person.findByIdAndRemove(req.params.id)
+    .then(result => {
+      res.status(204).end()
+    })
+    .catch(error => next(error))
+})
+
+// ====== Error handling ==================
+
+const unknownEndpoint = (req, res) => {
+  res.status(404).send({error: 'unknown endpoint'})
+}
+app.use(unknownEndpoint)
+
+const errorHandler = (error, req, res, next) => {
+  console.error(error.message)
+  if (error.name === 'CastError') {
+    return res.status(400).send({error: 'malformatted id'})
+  } else if (error.name === 'ValidationError') {
+    return res.status(400).send({error: error.message})
+  }
+  next(error)
+}
+app.use(errorHandler)
+
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`)
 })
