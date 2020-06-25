@@ -6,7 +6,7 @@ const app = express()
 const Person = require('./models/person.js')  // it has mongoose inside
 const PORT = process.env.PORT || 3001
 
-morgan.token('body', (req, res) => {
+morgan.token('body', req => {
   if (req.method === 'POST') {
     return JSON.stringify(req.body)
   }
@@ -92,7 +92,7 @@ app.put('/api/persons/:id', (req, res, next) => {
 
 app.delete('/api/persons/:id', (req, res, next) => {
   Person.findByIdAndRemove(req.params.id)
-    .then(result => {
+    .then(res => {
       res.status(204).end()
     })
     .catch(error => next(error))
@@ -101,16 +101,16 @@ app.delete('/api/persons/:id', (req, res, next) => {
 // ====== Error handling ==================
 
 const unknownEndpoint = (req, res) => {
-  res.status(404).send({error: 'unknown endpoint'})
+  res.status(404).send({ error: 'unknown endpoint' })
 }
 app.use(unknownEndpoint)
 
 const errorHandler = (error, req, res, next) => {
   console.error(error.message)
   if (error.name === 'CastError') {
-    return res.status(400).send({error: 'malformatted id'})
+    return res.status(400).send({ error: 'malformatted id' })
   } else if (error.name === 'ValidationError') {
-    return res.status(400).send({error: error.message})
+    return res.status(400).send({ error: error.message })
   }
   next(error)
 }
